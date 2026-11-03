@@ -110,8 +110,13 @@ $("#signinForm").addEventListener("submit", async (e) => {
     options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false },
   });
   btn.disabled = false;
-  if (error) showSignin(`Couldn't send the link: ${error.message}`, true);
-  else showSignin("Check your email for the sign-in link, and open it on this device.");
+  if (error && /rate limit/i.test(error.message)) {
+    showSignin("Supabase only sends a few sign-in emails an hour, and that limit is reached. Use the newest link you already have, or try again in an hour.", true);
+  } else if (error) {
+    showSignin(`Couldn't send the link: ${error.message}`, true);
+  } else {
+    showSignin("Check your email and open the link in this same browser.");
+  }
 });
 
 // Forget everything on screen: data, any new key, the live channel.
