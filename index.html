@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://lfmakstmokdpnnbmqdop.supabase.co wss://lfmakstmokdpnnbmqdop.supabase.co; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://lfmakstmokdpnnbmqdop.supabase.co wss://lfmakstmokdpnnbmqdop.supabase.co; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <title>GeoChat Agent HQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -92,11 +92,13 @@ button,input{font:inherit;color:inherit}
 .blocks{color:var(--muted);font-size:13px!important}
 .blocks strong{color:var(--ink);font-weight:600}
 .opts{display:flex;flex-direction:column;gap:6px}
-.opt{display:grid;grid-template-columns:1fr auto;gap:1px 8px;text-align:left;border:1px solid var(--line-strong);background:var(--surface-2);border-radius:8px;padding:8px 10px;cursor:pointer}
+.opt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 8px;text-align:left;border:1px solid var(--line-strong);background:var(--surface-2);border-radius:8px;padding:8px 10px;cursor:pointer}
 .opt:hover:not(:disabled){border-color:var(--ink)}
 .opt:disabled{opacity:.55;cursor:wait}
-.opt .l{font-weight:600;font-size:14px}
-.opt .then{grid-column:1 / -1;font-size:12.5px;color:var(--muted)}
+.opt .l{font-weight:600;font-size:14px;overflow-wrap:anywhere}
+.opt .then{grid-column:1 / -1;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.kind{display:block;margin-top:6px;font-size:12px;font-weight:600;color:var(--muted)}
+.kind[data-routed="true"]{color:var(--accent)}
 .opt .badge{font-size:10.5px;font-weight:700;color:var(--accent);letter-spacing:.06em;text-transform:uppercase;align-self:center}
 .opt.rec{border-color:var(--accent);background:var(--accent-soft)}
 .card-foot{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:9px;font-size:13px;align-items:baseline}
@@ -110,7 +112,7 @@ textarea{min-height:64px;resize:vertical}
 .replybox .row{display:flex;gap:8px;flex-wrap:wrap}
 .group-label{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:6px 0 0}
 .snoozed{opacity:.72}
-.answered-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.answered-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
 .answered-list b{color:var(--ink);font-weight:600}
 .empty{border:1px dashed var(--line-strong);border-radius:8px;padding:14px;color:var(--muted);font-size:14px;margin:0}
 code{font-family:var(--font-mono);font-size:.86em;background:var(--surface-2);border:1px solid var(--line);padding:0 4px;border-radius:4px;overflow-wrap:anywhere}

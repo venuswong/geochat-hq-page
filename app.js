@@ -4,6 +4,13 @@
 // agent wrote is shown as text, never as HTML.
 "use strict";
 
+// Never run inside another site's frame (GitHub Pages can't send
+// X-Frame-Options, and a meta CSP can't set frame-ancestors).
+if (window.top !== window.self) {
+  document.body.textContent = "Open GeoChat Agent HQ in its own tab.";
+  throw new Error("framed");
+}
+
 const cfg = window.HQ_CONFIG;
 const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.anonKey, {
   // Implicit flow: the email link works even if the phone opens it in a
@@ -34,6 +41,10 @@ let replyOpen = {};       // question id -> reply box open
 let busy = new Set();     // question ids with an answer being sent
 let newKey = null;        // {agent, key} shown once
 let channel = null;
+let keyTimer = null;
+let inboxStale = false;   // a re-render waits while Venus is typing
+let linkNote = null;      // why the last email link failed, kept until a new one is asked for
+let keyBusy = false;
 let startedFor = null;   // user id the page is running for
 
 // ---------------------------------------------------------------------------
@@ -62,11 +73,14 @@ function when(ts) {
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return same ? time : `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
 }
+// Links from agents: https only, and the full host is always shown so a long
+// look-alike host can't hide its real domain.
 function safeLink(s) {
   try {
     const u = new URL(String(s));
-    if (u.protocol === "https:" || u.protocol === "http:") {
-      return `<a href="${esc(u.href)}" target="_blank" rel="noopener noreferrer">${esc(u.hostname + u.pathname).slice(0, 60)}</a>`;
+    if (u.protocol === "https:") {
+      const path = u.pathname.length > 30 ? u.pathname.slice(0, 29) + "…" : u.pathname;
+      return `<a href="${esc(u.href)}" target="_blank" rel="noopener noreferrer"><b>${esc(u.hostname)}</b>${esc(path)}</a>`;
     }
   } catch { /* not a URL */ }
   return esc(s);
@@ -90,31 +104,45 @@ $("#signinForm").addEventListener("submit", async (e) => {
   const email = $("#email").value.trim();
   const btn = e.target.querySelector("button");
   btn.disabled = true;
+  linkNote = null;
   const { error } = await sb.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: location.origin + location.pathname },
+    options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false },
   });
   btn.disabled = false;
   if (error) showSignin(`Couldn't send the link: ${error.message}`, true);
   else showSignin("Check your email for the sign-in link, and open it on this device.");
 });
 
+// Forget everything on screen: data, any new key, the live channel.
+function clearPage() {
+  D = {};
+  newKey = null;
+  clearTimeout(keyTimer);
+  replyOpen = {};
+  for (const id of ["#inbox", "#board", "#lanes", "#ledger", "#keys", "#counts"]) $(id).innerHTML = "";
+  if (channel) { sb.removeChannel(channel); channel = null; }
+}
+
 $("#signOut").addEventListener("click", async () => {
-  if (channel) await sb.removeChannel(channel);
+  clearPage();
   await sb.auth.signOut();
   showSignin("Signed out.");
 });
 
 async function start(session) {
-  if (!session) return showSignin();
+  if (!session) return linkNote ? showSignin(linkNote, true) : showSignin();
   if (startedFor === session.user.id) return;
   startedFor = session.user.id;
   // Binds the owner row to this login on first sign-in; refuses any other login.
   const { error } = await sb.rpc("hq_claim_owner");
   if (error) {
     startedFor = null;
-    await sb.auth.signOut();
-    return showSignin(error.message.replace(/^HQ: /, "") + ". Only Venus's login can open HQ.", true);
+    if (/not the HQ owner|confirm your email|sign in as Venus/i.test(error.message)) {
+      await sb.auth.signOut();
+      return showSignin(error.message.replace(/^HQ: /, "") + ". Only Venus's login can open HQ.", true);
+    }
+    return showSignin(`HQ couldn't check your login just now (${error.message}). Reload the page to try again.`, true);
   }
   $("#signin").hidden = true;
   $("#app").hidden = false;
@@ -129,7 +157,7 @@ async function start(session) {
 async function load() {
   const q = (t) => {
     let r = sb.from(t).select("*");
-    if (t === "events" || t === "status_posts" || t === "lock_log") r = r.order("id", { ascending: false }).limit(400);
+    if (t === "events" || t === "status_posts" || t === "lock_log") r = r.order("id", { ascending: false }).limit(1500);
     if (t === "answers") r = r.order("created_at", { ascending: false }).limit(200);
     if (t === "handoffs" || t === "questions") r = r.order("created_at", { ascending: false }).limit(300);
     return r;
@@ -141,8 +169,14 @@ async function load() {
   render();
 }
 
-let reloadTimer = null;
-function reloadSoon() { clearTimeout(reloadTimer); reloadTimer = setTimeout(load, 400); }
+// Reload shortly after a change, but at least every 3 seconds during a burst.
+let reloadTimer = null, firstChange = 0;
+function reloadSoon() {
+  const now = Date.now();
+  if (!reloadTimer) firstChange = now;
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => { reloadTimer = null; load(); }, now - firstChange > 3000 ? 0 : 400);
+}
 
 function subscribe() {
   if (channel) sb.removeChannel(channel);
@@ -188,7 +222,7 @@ function agentState(a) {
   const since = live[0].last_event_at;
   if (ev === "needs_permission") return { st: "permission", since, machine };
   if (ev === "stop_failure" || lastStatus?.state === "blocked") return { st: "blocked", since, machine };
-  if (openQ.length) return { st: "question", since: openQ[0].created_at, machine };
+  if (openQ.length) return { st: "question", since: openQ[openQ.length - 1].created_at, machine };
   if (ev === "prompt" || ev === "session_start") return { st: "working", since, machine };
   const waiting = (D.handoffs || []).some((h) => h.from_agent === a.id && ["open", "claimed", "waiting_venus"].includes(h.status));
   return { st: waiting ? "waiting" : "idle", since, machine };
@@ -213,6 +247,7 @@ function runsOn(a, machine) {
 
 function laneOf(h) {
   if (h.status === "waiting_venus") return "needs";
+  if (h.status === "resolved" && h.resolution === "blocked") return "needs";
   if (["resolved", "logged", "declined"].includes(h.status)) return "done";
   if (h.type === "dataset_ready") return "inqa";
   if (h.type === "fix_ready") return "retest";
@@ -254,25 +289,39 @@ function renderCounts() {
 
 function qCard(q, snoozed) {
   const c = q.card || {};
+  // A routed handoff is recognised by HQ's own record (handoff_id), never by
+  // what the card says, so an agent's question can't pass for one.
   const h = q.handoff_id ? (D.handoffs || []).find((x) => x.id === q.handoff_id) : null;
+  const routed = Boolean(q.handoff_id);
   const needsDecision = h && h.on_approve;   // Approve or Decline only; a reply alone doesn't route it
   const isBusy = busy.has(q.id);
-  const opts = (Array.isArray(c.options) ? c.options : []).map((o, i) => `
-    <button class="opt${o.recommended ? " rec" : ""}" type="button" data-act="pick" data-q="${q.id}" data-i="${i}"${isBusy ? " disabled" : ""}>
-      <span class="l">${esc(o.label)}</span>${o.recommended ? '<span class="badge">Recommended</span>' : "<span></span>"}
+  const options = Array.isArray(c.options) ? c.options : [];
+  // "Recommended" only when it's the asking agent's own single recommendation.
+  const recIndex = !routed && options.filter((o) => o.recommended).length === 1 ? options.findIndex((o) => o.recommended) : -1;
+  const opts = options.map((o, i) => `
+    <button class="opt${i === recIndex ? " rec" : ""}" type="button" data-act="pick" data-q="${q.id}" data-i="${i}"${isBusy ? " disabled" : ""}>
+      <span class="l">${esc(o.label)}</span>${i === recIndex ? '<span class="badge">Recommended</span>' : "<span></span>"}
       <span class="then">${esc(o.then)}</span></button>`).join("");
-  const links = (Array.isArray(c.links) ? c.links : []).map(safeLink).join(" · ");
+  const links = routed ? "" : (Array.isArray(c.links) ? c.links : []).map(safeLink).join(" · ");
   const name = nameOf(q.from_agent);
+  const kind = routed
+    ? `<span class="kind" data-routed="true">Routed by HQ${h ? ` · handoff ${esc(h.ref)} (${esc(h.type)})` : ""}</span>`
+    : `<span class="kind">Question from ${esc(name)}</span>`;
+  const why = routed
+    ? `<p class="blocks"><strong>Why it's here:</strong> HQ's routing rules send this kind of handoff to you first. The title and summary are ${esc(name)}'s words.</p>`
+    : c.recommendation_why ? `<p class="blocks"><strong>Why ${esc(name)} recommends it:</strong> ${esc(c.recommendation_why)}</p>` : "";
+  const blocks = routed ? (h ? `Handoff ${esc(h.ref)} waits until you decide.` : "") : esc(c.blocks);
   return `<article class="qcard${snoozed ? " snoozed" : ""}" aria-labelledby="h-${q.id}">
     <header><span class="who">${dot(q.from_agent)}${esc(fullName(q.from_agent))}</span><span class="urg" data-u="${esc(q.urgency)}">${esc(URG[q.urgency]?.[0] ?? q.urgency)}</span><span class="qid">${esc(q.ref)}</span></header>
+    ${kind}
     <h3 id="h-${q.id}">${esc(c.title)}</h3>
-    ${c.body ? `<p>${esc(c.body)}</p>` : ""}
-    ${c.recommendation_why ? `<p class="blocks"><strong>Why ${esc(name)} recommends it:</strong> ${esc(c.recommendation_why)}</p>` : ""}
-    <p class="blocks"><strong>Waiting on this:</strong> ${esc(c.blocks)}</p>
+    ${c.body && c.body !== c.title ? `<p>${esc(c.body)}</p>` : ""}
+    ${why}
+    ${blocks ? `<p class="blocks"><strong>Waiting on this:</strong> ${blocks}</p>` : ""}
     <div class="opts">${opts}</div>
     <div class="card-foot">
       ${needsDecision ? "" : `<button class="linkbtn" type="button" data-act="reply" data-q="${q.id}" aria-expanded="${replyOpen[q.id] ? "true" : "false"}">Reply in words</button>`}
-      <button class="linkbtn" type="button" data-act="more" data-q="${q.id}">Ask for more</button>
+      ${routed ? "" : `<button class="linkbtn" type="button" data-act="more" data-q="${q.id}">Ask for more</button>`}
       <button class="linkbtn" type="button" data-act="snooze" data-q="${q.id}">Snooze 1 hour</button>
       <button class="linkbtn" type="button" data-act="dismiss" data-q="${q.id}">Dismiss</button>
       <span class="ev">Asked ${esc(when(q.created_at))}${links ? ` · ${links}` : ""}</span>
@@ -285,7 +334,17 @@ function qCard(q, snoozed) {
   </article>`;
 }
 
-function renderInbox() {
+// Don't rebuild the inbox under Venus's fingers: wait until she leaves it.
+function typingInInbox() {
+  const a = document.activeElement;
+  return a && $("#inbox").contains(a) && a.tagName === "TEXTAREA";
+}
+$("#inbox").addEventListener("focusout", () => setTimeout(() => {
+  if (inboxStale && !typingInInbox()) { inboxStale = false; renderInbox(); }
+}, 0));
+
+function renderInbox(force) {
+  if (!force && typingInInbox()) { inboxStale = true; return; }
   const open = openQuestions().sort((p, q) => (URG[p.urgency]?.[1] ?? 9) - (URG[q.urgency]?.[1] ?? 9) || new Date(p.created_at) - new Date(q.created_at));
   const sn = snoozedQuestions();
   const more = (D.questions || []).filter((q) => q.status === "more_info");
@@ -293,11 +352,15 @@ function renderInbox() {
   let html = "";
   if (!open.length && !perms.length && !sn.length) html += '<p class="empty">Nothing needs you. When a decision is yours, the agent asks here and waits for your answer.</p>';
   html += open.map((q) => qCard(q, false)).join("");
-  html += perms.map((a) => `<article class="pcard">
-      <header><span class="who">${dot(a.id)}${esc(fullName(a.id))}</span><span class="urg" data-u="today">In its session</span></header>
+  html += perms.map((a) => {
+    const since = agentState(a).since;
+    const old = since && Date.now() - new Date(since) > minutes(10);
+    return `<article class="pcard">
+      <header><span class="who">${dot(a.id)}${esc(fullName(a.id))}</span><span class="urg" data-u="today">In its session</span><span class="qid">since ${esc(when(since))}</span></header>
       <h3>${esc(a.name)} is waiting for your approval in its Claude Code session</h3>
-      <p class="blocks">You approve this inside ${esc(a.name)}'s session (on your phone: the Claude app, Remote Control). HQ can't approve it for you.</p>
-    </article>`).join("");
+      <p class="blocks">You approve this inside ${esc(a.name)}'s session (on your phone: the Claude app, Remote Control). HQ can't approve it for you.${old ? " If you've already approved it, this clears when the agent next finishes a step." : ""}</p>
+    </article>`;
+  }).join("");
   if (sn.length) html += '<p class="group-label">Snoozed</p>' + sn.map((q) => qCard(q, true)).join("");
   if (more.length) html += '<p class="group-label">Waiting for more from the agent</p><ul class="answered-list">'
     + more.map((q) => `<li>${esc(nameOf(q.from_agent))} · <span class="mono">${esc(q.ref)}</span>: ${esc(q.card?.title)}</li>`).join("") + "</ul>";
@@ -384,7 +447,7 @@ function renderKeys() {
   const agents = (D.agents || []).filter((a) => a.status === "active");
   let html = `<p class="muted" style="margin:0">Each agent needs its own key in its folder's <code>.env</code> as <code>HQ_AGENT_KEY=…</code>. A new key is shown once; copy it straight into that file. Never paste it into a chat.</p>`;
   if (newKey) {
-    html += `<div class="newkey" role="alert"><b>New key for ${esc(fullName(newKey.agent))}. It won't be shown again.</b>
+    html += `<div class="newkey" role="status" aria-label="New key shown"><b>New key for ${esc(fullName(newKey.agent))}. It won't be shown again, and disappears from this page in 5 minutes.</b>
       <code id="newKeyText">${esc(newKey.key)}</code>
       <span class="row"><button class="btn" type="button" data-act="copykey">Copy</button> <button class="btn" type="button" data-act="hidekey">I've saved it</button></span>
       <span class="muted">Open the agent's folder, copy <code>.env.example</code> to <code>.env</code> if it isn't there, and paste after <code>HQ_AGENT_KEY=</code>. Then restart the agent.</span></div>`;
@@ -401,12 +464,12 @@ function renderKeys() {
 
 async function answer(q, row, doneMsg) {
   busy.add(q.id);
-  renderInbox();
+  renderInbox(true);
   const { error } = await sb.from("answers").insert({ question_id: q.id, ...row });
   busy.delete(q.id);
   if (error) {
     toast(error.message.replace(/^HQ: /, ""));
-    renderInbox();
+    renderInbox(true);
     return false;
   }
   replyOpen[q.id] = false;
@@ -425,11 +488,15 @@ $("#inbox").addEventListener("click", (e) => {
   if (act === "pick") {
     const o = q.card?.options?.[Number(b.dataset.i)];
     if (!o) return;
-    if (/^reply/i.test(o.label)) { replyOpen[q.id] = "reply"; renderInbox(); document.getElementById("r-" + q.id)?.focus(); return; }
+    if (/^reply/i.test(o.label)) { replyOpen[q.id] = "reply"; renderInbox(true); document.getElementById("r-" + q.id)?.focus(); return; }
+    if (q.handoff_id && /^dismiss$/i.test(o.label.trim())) {
+      if (confirm(`Dismiss ${q.ref}? ${name} is told it's closed with no action.`)) answer(q, { action: "dismiss" }, `Dismissed. ${name} is told.`);
+      return;
+    }
     answer(q, { action: "pick", option_label: o.label }, `Answer sent to ${name}.`);
   } else if (act === "reply" || act === "more") {
     replyOpen[q.id] = replyOpen[q.id] === act ? false : act;
-    renderInbox();
+    renderInbox(true);
     if (replyOpen[q.id]) document.getElementById("r-" + q.id)?.focus();
   } else if (act === "snooze") {
     answer(q, { action: "snooze", snooze_hours: 1 }, `Snoozed for an hour. ${name} keeps waiting.`);
@@ -454,11 +521,18 @@ $("#keys").addEventListener("click", async (e) => {
   if (!b) return;
   const act = b.dataset.act;
   if (act === "newkey") {
+    if (keyBusy) return;
     const id = b.dataset.agent;
     if (!confirm(`Create a new HQ key for ${fullName(id)}? Its old keys keep working until you turn them off.`)) return;
+    keyBusy = true;
+    b.disabled = true;
     const { data, error } = await sb.rpc("hq_admin_new_key", { p_agent: id, p_label: `made on the HQ page ${new Date().toISOString().slice(0, 10)}` });
+    keyBusy = false;
+    b.disabled = false;
     if (error) return toast(error.message);
     newKey = { agent: id, key: data };
+    clearTimeout(keyTimer);
+    keyTimer = setTimeout(() => { newKey = null; renderKeys(); }, minutes(5));   // don't leave a key on screen
     renderKeys();
   } else if (act === "revoke") {
     const id = b.dataset.agent;
@@ -494,6 +568,17 @@ tabs.forEach((t, i) => {
 
 // ---------------------------------------------------------------------------
 
+// An expired or already-used email link comes back as #error=…; say so.
+(() => {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("error")) {
+    const why = h.get("error_code") === "otp_expired" ? "That sign-in link has expired or was already used." : (h.get("error_description") || "That sign-in link didn't work.");
+    history.replaceState(null, "", location.pathname);
+    linkNote = `${why} Ask for a new one below.`;
+    showSignin(linkNote, true);
+  }
+})();
+
 sb.auth.onAuthStateChange((event, session) => {
   if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
     if (session && history.replaceState && /[?&#](code|access_token|error)=/.test(location.href)) {
@@ -502,6 +587,7 @@ sb.auth.onAuthStateChange((event, session) => {
     setTimeout(() => start(session), 0);
   } else if (event === "SIGNED_OUT") {
     startedFor = null;
+    clearPage();
     showSignin();
   }
 });
