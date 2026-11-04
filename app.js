@@ -28,6 +28,7 @@ const STATE = {
   permission: { w: "Needs approval in its session", c: "--warn" },
   blocked:    { w: "Blocked", c: "--crit" },
   idle:       { w: "Idle", c: "--line-strong", hollow: true },
+  quiet:      { w: "Idle, session open", c: "--line-strong", hollow: true },
   scheduled:  { w: "Scheduled", c: "--line-strong", hollow: true },
   offline:    { w: "Offline", c: "--line-strong", hollow: true },
   proposed:   { w: "Not set up yet", c: "--line-strong", hollow: true },
@@ -214,24 +215,30 @@ function snoozedQuestions() {
 function agentState(a) {
   if (a.status !== "active") return { st: "proposed" };
   const offlineAfter = minutes(guard("offline_after_minutes", 30));
-  const live = (D.sessions || []).filter((s) => s.agent_id === a.id && !s.ended_at && Date.now() - new Date(s.last_event_at) < offlineAfter)
+  // A session counts as open until it ends, for up to 12 hours since its last
+  // event (a crashed session never sends session_end). One that has been
+  // quiet longer than offline_after_minutes is open but resting, not offline.
+  const OPEN_FOR = minutes(12 * 60);
+  const open = (D.sessions || []).filter((s) => s.agent_id === a.id && !s.ended_at && Date.now() - new Date(s.last_event_at) < OPEN_FOR)
     .sort((x, y) => new Date(y.last_event_at) - new Date(x.last_event_at));
+  const live = open.filter((s) => Date.now() - new Date(s.last_event_at) < offlineAfter);
   const lastEvent = (D.events || []).find((e) => e.agent_id === a.id);
   const lastStatus = (D.status_posts || []).find((p) => p.agent_id === a.id);
   const openQ = openQuestions().filter((q) => q.from_agent === a.id);
-  const machine = live[0]?.machine || null;
+  const machine = open[0]?.machine || null;
 
-  if (!live.length) {
+  if (!open.length) {
     return { st: a.scheduled ? "scheduled" : "offline", since: lastEvent?.at, machine };
   }
-  const ev = live[0].last_event;
-  const since = live[0].last_event_at;
+  const ev = open[0].last_event;
+  const since = open[0].last_event_at;
   if (ev === "needs_permission") return { st: "permission", since, machine };
   if (ev === "stop_failure" || lastStatus?.state === "blocked") return { st: "blocked", since, machine };
   if (openQ.length) return { st: "question", since: openQ[openQ.length - 1].created_at, machine };
   if (ev === "prompt" || ev === "session_start") return { st: "working", since, machine };
   const waiting = (D.handoffs || []).some((h) => h.from_agent === a.id && ["open", "claimed", "waiting_venus"].includes(h.status));
-  return { st: waiting ? "waiting" : "idle", since, machine };
+  if (waiting) return { st: "waiting", since, machine };
+  return { st: live.length ? "idle" : "quiet", since, machine };
 }
 
 function nextStep(a) {
