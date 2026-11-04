@@ -385,7 +385,7 @@ function renderInbox(force) {
 }
 
 function renderBoard() {
-  $("#board").innerHTML = (D.agents || []).filter((a) => a.status !== "retired").map((a) => {
+  $("#board").innerHTML = (D.agents || []).filter((a) => a.status === "active").map((a) => {
     const s = agentState(a);
     const task = (D.status_posts || []).find((p) => p.agent_id === a.id)?.text ?? "";
     return `<tr>
