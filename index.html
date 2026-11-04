@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Pixelify+Sans:wght@400;600&family=Public+Sans:wght@400;500;600;700&display=swap">
 <style>
-/* Same tokens and layout as docs/mockup/agent-hq.html. The office comes in phase 2. */
+/* Same tokens and layout as docs/mockup/agent-hq.html. The office (phase 2) shows only with ?office=1 until Gate 1. */
 :root{
   --bg:#F1F4F1; --surface:#FFFFFF; --surface-2:#F6F8F5; --ink:#17242B; --muted:#55646B; --line:#D4DCD6; --line-strong:#B4C0B8;
   --accent:#3346B0; --accent-soft:#E7EAFA; --on-accent:#FFFFFF;
@@ -20,6 +20,9 @@
   --font-body:"Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   --radius:10px;
+  --floor:#E4EAE3; --floor-grid:#D8E0D7; --wall:#2A3940; --room:#EDF1EB; --desk:#C8B595; --desk-edge:#A48F69; --monitor:#2A3940;
+  --counter:#9AA8A0; --counter-edge:#7A8981; --couch:#7E8FA6; --chair:#8D9A93; --plant:#4E8A55; --legs:#2E3B4C;
+  --shadow:rgba(23,36,43,.18); --lamp-off:#9AA5A0; --folder:#D9A73C; --gold:#E0B24A; --apple:#C8372D; --apple-hi:#EE7A6E; --leaf:#4E9A4F;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -27,6 +30,9 @@
     --accent:#9AA6FF; --accent-soft:#232B52; --on-accent:#0D1330;
     --good:#5BC07E; --warn:#E3AE3C; --warn-soft:#3A2F14; --crit:#EF7474; --crit-soft:#3D1C1C;
     --a-data:#3EC1AE; --a-qa:#B48BEF; --a-web:#EE9157; --a-opportunities:#E47CAE; --a-hq-assistant:#8DC25C; --a-you:#9AA6FF;
+    --floor:#19232A; --floor-grid:#1F2A31; --wall:#9DAFB6; --room:#1D282E; --desk:#6B5C47; --desk-edge:#54472F; --monitor:#0C1215;
+    --counter:#4B5A55; --counter-edge:#3A4743; --couch:#465569; --chair:#3C4A50; --plant:#5FA466; --legs:#4A5B72;
+    --shadow:rgba(0,0,0,.35); --lamp-off:#4A5550; --folder:#E0B24A; --gold:#E0B24A; --apple:#C8372D; --apple-hi:#EE7A6E; --leaf:#4E9A4F;
     color-scheme:dark;
   }
 }
@@ -35,6 +41,9 @@
   --accent:#9AA6FF; --accent-soft:#232B52; --on-accent:#0D1330;
   --good:#5BC07E; --warn:#E3AE3C; --warn-soft:#3A2F14; --crit:#EF7474; --crit-soft:#3D1C1C;
   --a-data:#3EC1AE; --a-qa:#B48BEF; --a-web:#EE9157; --a-opportunities:#E47CAE; --a-hq-assistant:#8DC25C; --a-you:#9AA6FF;
+  --floor:#19232A; --floor-grid:#1F2A31; --wall:#9DAFB6; --room:#1D282E; --desk:#6B5C47; --desk-edge:#54472F; --monitor:#0C1215;
+  --counter:#4B5A55; --counter-edge:#3A4743; --couch:#465569; --chair:#3C4A50; --plant:#5FA466; --legs:#4A5B72;
+  --shadow:rgba(0,0,0,.35); --lamp-off:#4A5550; --folder:#E0B24A; --gold:#E0B24A; --apple:#C8372D; --apple-hi:#EE7A6E; --leaf:#4E9A4F;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -68,6 +77,22 @@ button,input{font:inherit;color:inherit}
 .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:14px;grid-template-areas:"inbox work";align-items:start}
 .inbox-panel{grid-area:inbox}.work-panel{grid-area:work}
 @media (max-width:920px){.layout{grid-template-columns:minmax(0,1fr);grid-template-areas:"inbox" "work"}.actions{margin-left:0}}
+.layout.with-office{grid-template-areas:"office office" "inbox work"}
+.office-panel{grid-area:office}
+.office-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;justify-content:space-between;margin-bottom:10px}
+.office-head h2{margin:0;font-size:17px}
+.office-head label{font-size:13px;color:var(--muted);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.canvas-wrap{border-radius:8px;overflow-x:auto;overflow-y:hidden;border:1px solid var(--line);background:var(--floor)}
+canvas#office{display:block;width:100%;min-width:560px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.agent-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:4px 11px 4px 7px;font-size:13px;cursor:pointer}
+.agent-chip:hover{border-color:var(--ink)}
+.agent-chip .st{color:var(--muted);display:inline-flex;align-items:center;gap:4px}
+.agent-chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.st-dot{width:8px;height:8px;border-radius:50%;background:var(--sc);display:inline-block}
+.st-dot[data-hollow="true"]{background:transparent;border:1.5px solid var(--sc)}
+.office-note{font-size:12px;color:var(--muted);margin:8px 0 0}
+@media (max-width:920px){.layout.with-office{grid-template-areas:"inbox" "office" "work"}}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;min-width:0}
 .panel-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
 .panel-head h2{margin:0;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700}
@@ -185,6 +210,15 @@ td.agent{white-space:nowrap;font-weight:600}
   </header>
 
   <main class="layout">
+    <section class="panel office-panel" id="officePanel" aria-labelledby="officeTitle" hidden>
+      <div class="office-head">
+        <h2 id="officeTitle">Office</h2>
+        <label><input type="checkbox" id="motionToggle"> Reduce motion</label>
+      </div>
+      <div class="canvas-wrap"><canvas id="office" role="img" aria-label="Office floor plan"></canvas></div>
+      <div class="chips" id="chips"></div>
+      <p class="office-note">A picture of the ledger, not the record: the status board and your inbox are the record. Click a dwarf or a chip to see what that agent is doing.</p>
+    </section>
     <section class="panel inbox-panel" aria-labelledby="inboxTitle">
       <div class="panel-head">
         <h2 id="inboxTitle">Your inbox</h2>
@@ -216,5 +250,6 @@ td.agent{white-space:nowrap;font-weight:600}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js" integrity="sha384-2zrRDgDHSYB/GN3nFW3fsZXoxEhKIr3N2h63Tc6DEOB9JJdFIu8xMJT2Cph/gBil" crossorigin="anonymous"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
+<script src="office.js"></script>
 </body>
 </html>

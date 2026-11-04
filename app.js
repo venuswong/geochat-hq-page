@@ -126,6 +126,7 @@ function clearPage() {
   clearTimeout(keyTimer);
   replyOpen = {};
   for (const id of ["#inbox", "#board", "#lanes", "#ledger", "#keys", "#counts"]) $(id).innerHTML = "";
+  window.clearOffice?.();
   if (channel) { sb.removeChannel(channel); channel = null; }
 }
 
@@ -271,6 +272,7 @@ function render() {
   renderLanes();
   renderLedger();
   renderKeys();
+  window.renderOffice?.(D);   // office.js, only when the office is switched on
 }
 
 function renderCounts() {
