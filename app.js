@@ -23,6 +23,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 const STATE = {
   working:    { w: "Working", c: "--good" },
+  background: { w: "Working: helper agents running", c: "--good" },
   waiting:    { w: "Waiting on another agent", c: "--muted" },
   question:   { w: "Question for you", c: "--warn" },
   permission: { w: "Needs approval in its session", c: "--warn" },
@@ -236,6 +237,11 @@ function agentState(a) {
   if (ev === "stop_failure" || lastStatus?.state === "blocked") return { st: "blocked", since, machine };
   if (openQ.length) return { st: "question", since: openQ[openQ.length - 1].created_at, machine };
   if (ev === "prompt" || ev === "session_start") return { st: "working", since, machine };
+  // Its turn ended but helper agents it started are still running in the
+  // background (the Stop hook's count); it resumes when they report back.
+  const lastOfSession = (D.events || []).find((e) => e.agent_id === a.id && e.claude_session_id === open[0].claude_session_id);
+  const bg = ev === "stop" && /^background:(\d+)$/.exec(lastOfSession?.notification_type || "");
+  if (bg) return { st: "background", since, machine, helpers: Number(bg[1]) };
   const waiting = (D.handoffs || []).some((h) => h.from_agent === a.id && ["open", "claimed", "waiting_venus"].includes(h.status));
   if (waiting) return { st: "waiting", since, machine };
   return { st: live.length ? "idle" : "quiet", since, machine };

@@ -101,7 +101,7 @@
       const s = window.agentState(a);
       Object.assign(p, LOOK[a.id] || DEFAULT_LOOK, {
         name: a.name, job: a.job, i, color: `--a-${a.id}`, beard: a.look?.beard ?? false,
-        state: s.st === "quiet" ? "idle" : s.st, quiet: s.st === "quiet", since: s.since,
+        state: s.st === "quiet" ? "idle" : s.st === "background" ? "working" : s.st, quiet: s.st === "quiet", helpers: s.helpers || 0, since: s.since,
         task: (data.status_posts || []).find((x) => x.agent_id === a.id)?.text || "",
       });
       p.hidden = p.state === "offline" || p.state === "scheduled";
@@ -163,7 +163,7 @@
     await new Promise((r) => setTimeout(r, 900));
     p.scripted = false;
     const a = (data.agents || []).find((x) => x.id === p.id);
-    if (a) { const st = window.agentState(a).st; p.quiet = st === "quiet"; p.state = p.quiet ? "idle" : st; }
+    if (a) { const r = window.agentState(a); p.quiet = r.st === "quiet"; p.helpers = r.helpers || 0; p.state = p.quiet ? "idle" : r.st === "background" ? "working" : r.st; }
     place(false);
     describe();
   }
@@ -384,7 +384,7 @@
   // ---------------------------------------------------------------- words, chips, clicks
   const esc = (x) => String(x ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   function describe() {
-    cv.setAttribute("aria-label", "Office floor plan. " + people.map((p) => `${p.name} is ${WHERE[p.state] || p.state}: ${(p.quiet ? "Idle, session open" : (WORDS[p.state] || p.state)).toLowerCase()}`).join(". ") + ".");
+    cv.setAttribute("aria-label", "Office floor plan. " + people.map((p) => `${p.name} is ${WHERE[p.state] || p.state}: ${(p.quiet ? "Idle, session open" : p.helpers ? `Working: ${p.helpers} helper ${p.helpers === 1 ? "agent" : "agents"} running` : (WORDS[p.state] || p.state)).toLowerCase()}`).join(". ") + ".");
     const chips = document.getElementById("chips");
     const focused = document.activeElement?.closest?.("#chips [data-person]")?.dataset.person;
     chips.innerHTML = people.map((p) => {
@@ -393,7 +393,7 @@
       return `<button class="agent-chip" type="button" data-person="${esc(p.id)}" aria-pressed="${selected === p.id}">`
         + `<span class="dot" style="--c:var(--a-${id}, var(--muted))"></span>`
         + `<span>${esc(p.name)} · ${esc(p.job)}</span>`
-        + `<span class="st"><span class="st-dot" style="--sc:var(${st[1]})" data-hollow="${st[2]}"></span><span aria-hidden="true">${st[0]}</span> ${esc(p.quiet ? "Idle, session open" : (WORDS[p.state] || p.state))}</span></button>`;
+        + `<span class="st"><span class="st-dot" style="--sc:var(${st[1]})" data-hollow="${st[2]}"></span><span aria-hidden="true">${st[0]}</span> ${esc(p.quiet ? "Idle, session open" : p.helpers ? `Working: ${p.helpers} helper ${p.helpers === 1 ? "agent" : "agents"} running` : (WORDS[p.state] || p.state))}</span></button>`;
     }).join("");
     if (focused) chips.querySelector(`[data-person="${CSS.escape(focused)}"]`)?.focus();
     kick();
