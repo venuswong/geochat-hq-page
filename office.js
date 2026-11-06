@@ -20,6 +20,7 @@
     opportunities:  { skin: "#C4875A", hair: "#5A3A22", tunic: "#6E4A73" },
     "hq-assistant": { skin: "#A56B48", hair: "#8A6A52", tunic: "#8C5A3A" },
     ux:             { skin: "#EBC29C", hair: "#2E2A3A", tunic: "#3F6F6A" },
+    company:        { skin: "#D6A27A", hair: "#2A1E18", tunic: "#7A4E36" },
   };
   const DEFAULT_LOOK = { skin: "#D9A57E", hair: "#5A3A22", tunic: "#5A5F8C" };
   const VENUS = { id: "venus", name: "You", color: "--a-you", skin: "#D9A57E", hair: "#1C1410", tunic: "#5A5F8C", beard: false, glasses: true, state: "working" };
@@ -62,8 +63,8 @@
 
   // ---------------------------------------------------------------- floor plan (logical 640 x 360)
   const W = 640, H = 360, CORR = 210, SPEED = 95, DESK_W = 86;
-  const SLOTS = [[0, 0], [0, 1], [1, 0], [1, 1], [0, 2], [1, 2]];
-  const deskOf = (i) => { const [r, c] = SLOTS[i] || SLOTS[SLOTS.length - 1]; return { x: 32 + c * 132, y: r ? 284 : 64 }; };
+  const SLOTS = [[0, 0], [0, 1], [1, 0], [1, 1], [0, 2], [1, 2], [0, 3], [1, 3]];   // four desks a row fit left of the office wall (x 470)
+  const deskOf = (i) => { const [r, c] = SLOTS[i] || SLOTS[SLOTS.length - 1]; return { x: 20 + c * 112, y: r ? 284 : 64 }; };
   const BREAK = [{ x: 500, y: 318 }, { x: 546, y: 318 }, { x: 592, y: 318 }, { x: 598, y: 262 }, { x: 526, y: 334 }];
   const VENUS_FEET = { x: 555, y: 84 };
   function locPoint(loc) {
@@ -88,7 +89,7 @@
 
   // ---------------------------------------------------------------- model
   let data = {};               // app.js's ledger (D), handed over on every render
-  const ORDER = ["data", "qa", "web", "opportunities", "ux", "hq-assistant"];   // desk order (config/agents.yaml)
+  const ORDER = ["data", "qa", "web", "opportunities", "ux", "company", "hq-assistant"];   // desk order (config/agents.yaml)
   let people = [];             // one per active agent, in registry order
   let seenHandoffs = null;     // handoff ids already known (null until first load)
   let selected = null;
@@ -194,7 +195,7 @@
   const TOKS = ["--floor", "--floor-grid", "--wall", "--room", "--desk", "--desk-edge", "--monitor", "--counter", "--counter-edge",
     "--couch", "--chair", "--plant", "--legs", "--shadow", "--lamp-off", "--folder", "--gold", "--apple", "--apple-hi", "--leaf",
     "--ink", "--muted", "--surface", "--surface-2", "--line-strong", "--accent", "--accent-soft", "--good", "--warn", "--crit",
-    "--a-data", "--a-qa", "--a-web", "--a-opportunities", "--a-hq-assistant", "--a-ux", "--a-you"];
+    "--a-data", "--a-qa", "--a-web", "--a-opportunities", "--a-hq-assistant", "--a-ux", "--a-company", "--a-you"];
   function readTokens() { const cs = getComputedStyle(document.documentElement); TOKS.forEach((k) => { T[k] = cs.getPropertyValue(k).trim(); }); }
   readTokens();
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", readTokens);
